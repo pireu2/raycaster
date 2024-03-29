@@ -1,40 +1,10 @@
-#include <stdio.h>
-#include <stdbool.h>
-#include <math.h>
-#include <SDL.h>
-
-
-typedef float f32;
-typedef double f64;
-typedef unsigned char u8;
-typedef unsigned short u16;
-typedef unsigned int u32;
-typedef unsigned long long u64;
-typedef char i8;
-typedef short i16;
-typedef int i32;
-typedef long long int i64;
-typedef size_t usize;
-typedef ssize_t isize;
-
-typedef struct{
-    f64 x,y;
-}vec2;
-typedef struct{
-    i32 x,y;
-}vec2i;
-
-#define length(v) ({ const vec2 _v = (v); sqrtf((_v.x * _v.x) + (_v.y * _v.y)); })
-#define normalize(v) ({ const vec2 _v = (v); f32 _l = length(_v); (vec2){_v.x / _l, _v.y / _l}; })
-#define dot(v0,v1) ({ const vec2 _v0 = (v0), _v1 = (v1); (_v0.x * _v1.x) + (_v0.y * _v1.y); })
-#define max(a,b) ({ __typeof__(a) _a = (a); __typeof__(b) _b = (b);_a > _b ? _a : _b; })
-#define min(a,b) ({ __typeof__(a) _a = (a); __typeof__(b) _b = (b); _a < _b ? _a : _b; })
-#define sign(a) ({ __typeof__(a) _a = (a); _a > 0 ? 1 : _a < 0 ? -1 : 0; })
+#include "config.h"
 
 #define SCREEN_WIDTH 384
 #define SCREEN_HEIGHT 224
 
 #define MAP_SIZE 8
+#define MINIMAP_SCALE 5
 
 static u8 MAP_DATA[MAP_SIZE * MAP_SIZE] = {
         1,1,1,1,1,1,1,1,
@@ -64,6 +34,40 @@ static void draw_vertical_line(i32 x, i32 y0, i32 y1, u32 color){
     }
 }
 
+static void draw_player_position(){
+
+}
+
+static void draw_minimap(){
+    for(i32 i = 0; i < MAP_SIZE; i++) {
+        for (i32 j = 0; j < MAP_SIZE; j++) {
+            u32 color;
+            switch (MAP_DATA[j * MAP_SIZE + i]) {
+                case 1:
+                    color = 0xFF0000;
+                    break;
+                case 2:
+                    color = 0x00FF00;
+                    break;
+                case 3:
+                    color = 0x0000FF;
+                    break;
+                case 4:
+                    color = 0xFFFFFF;
+                    break;
+                default:
+                    color = 0x00000;
+                    break;
+            }
+            for(i32 x = 0; x < MINIMAP_SCALE; x++){
+                for(i32 y = 0; y < MINIMAP_SCALE; y++){
+                    state.pixels[(j * MINIMAP_SCALE + y) * SCREEN_WIDTH + (i * MINIMAP_SCALE + x)] = color;
+                }
+            }
+        }
+    }
+}
+
 static void render(){
     for(int x = 0; x<SCREEN_WIDTH;x++){
         const f64 xcam =  2 * x / (f64)(SCREEN_WIDTH)  - 1;
@@ -73,21 +77,19 @@ static void render(){
         };
 
         vec2 pos = state.pos;
-        vec2i map_pos = { (int) pos.x, (int) pos.y };
+        vec2i map_pos = { (i32) pos.x, (i32) pos.y };
 
         const vec2 delta_dist = (vec2){
             (raydir.x == 0)  ? 1e30 : fabs( 1 / raydir.x),
             (raydir.y == 0) ? 1e30 : fabs(1 / raydir.y)
         };
 
-
-
         vec2 side_dist = (vec2){
             delta_dist.x * (raydir.x < 0 ? (pos.x - map_pos.x) : (map_pos.x + 1 - pos.x)),
             delta_dist.y * (raydir.y < 0 ? (pos.y - map_pos.y ): (map_pos.y + 1 - pos.y))
         };
 
-        const vec2i step = {(int) sign(raydir.x), (int) sign(raydir.y)};
+        const vec2i step = {(i32) sign(raydir.x), (i32) sign(raydir.y)};
 
         i32 hit = 0, side;
 
@@ -107,7 +109,6 @@ static void render(){
                 hit = 1;
             }
         }
-
 
         u32 color;
         switch(MAP_DATA[map_pos.y * MAP_SIZE + map_pos.x]){
@@ -143,43 +144,73 @@ static void render(){
         draw_vertical_line(x, 0, y0, 0xFF202020);
         draw_vertical_line(x, y1, SCREEN_HEIGHT - 1, 0xFF505050);
     }
+    draw_minimap();
+    draw_player_position();
 }
 
-static void rotate(f32 rotation){
+static void rotate(f64 rotation){
     const vec2 d = state.dir;
     const vec2 p = state.plane;
-    state.dir.x = d.x * cosf(rotation) - d.y * sinf(rotation);
-    state.dir.y = d.x * sinf(rotation) + d.y * cosf(rotation);
-    state.plane.x = p.x * cosf(rotation) - p.y * sinf(rotation);
-    state.plane.y = p.x * sinf(rotation) + p.y * cosf(rotation);
+    state.dir.x = d.x * cos(rotation) - d.y * sin(rotation);
+    state.dir.y = d.x * sin(rotation) + d.y * cos(rotation);
+    state.plane.x = p.x * cos(rotation) - p.y * sin(rotation);
+    state.plane.y = p.x * sin(rotation) + p.y * cos(rotation);
 }
 
-static void process_events(){
+static void process_events(f64 dt){
     SDL_Event event;
     while(SDL_PollEvent(&event)) {
         switch(event.type){
             case SDL_QUIT:
                 state.quit = true;
                 break;
+            case SDL_MOUSEMOTION:
+                rotate(-event.motion.xrel * 0.05f *  dt);
+                break;
         }
     }
-    const f32 rotation_speed= 3.0f * 0.0174533f;
-    const f32 move_speed = 3.0f * 0.0174533f;
+    const f64 rotation_speed= 3.0f * dt;
+    const f64 move_speed = 3.0f * dt;
 
     const u8 *keys = SDL_GetKeyboardState(NULL);
+
+    if(keys[SDL_SCANCODE_ESCAPE]){
+        state.quit = true;
+    }
     if(keys[SDL_SCANCODE_A]){
-        rotate(+rotation_speed);
+        vec2 new_pos = {
+            state.pos.x - state.dir.x * move_speed,
+            state.pos.y
+        };
+        if(MAP_DATA[(i32)new_pos.y * MAP_SIZE + (i32)new_pos.x] == 0)
+            state.pos = new_pos;
     }
     if(keys[SDL_SCANCODE_D]){
-        rotate(-rotation_speed);
+        vec2 new_pos = {
+            state.pos.x + state.dir.x * move_speed,
+            state.pos.y
+        };
+        if(MAP_DATA[(i32)new_pos.y * MAP_SIZE + (i32)new_pos.x] == 0)
+            state.pos = new_pos;
+
     }
     if(keys[SDL_SCANCODE_W]){
-        state.pos.x += state.dir.x * move_speed;
-        state.pos.y += state.dir.y * move_speed;
+        vec2 new_pos = {
+            state.pos.x + state.dir.x * move_speed,
+            state.pos.y + state.dir.y * move_speed
+        };
+        if(MAP_DATA[(i32)new_pos.y * MAP_SIZE + (i32)new_pos.x] == 0)
+            state.pos = new_pos;
+
     }
     if(keys[SDL_SCANCODE_S]){
-        state.pos.x -= state.dir.x * move_speed;
-        state.pos.y -= state.dir.y * move_speed;
+        vec2 new_pos = {
+            state.pos.x - state.dir.x * move_speed,
+            state.pos.y - state.dir.y * move_speed
+        };
+        if(MAP_DATA[(i32)new_pos.y * MAP_SIZE + (i32)new_pos.x] == 0)
+            state.pos = new_pos;
+
     }
 }
 
@@ -216,12 +247,16 @@ static void init_window(){
     if(!state.texture){
         fprintf(stderr, "SDL_CreateTexture failed: %s\n", SDL_GetError());
     }
+
+    SDL_ShowCursor(SDL_DISABLE);
+    SDL_SetRelativeMouseMode(SDL_TRUE);
+    SDL_WarpMouseInWindow(state.window, SCREEN_WIDTH / 2, SCREEN_HEIGHT / 2);
 }
 
 int main(int argc, char* argv[]) {
     init_window();
 
-    state.pos = (vec2) {2,1};
+    state.pos = (vec2) {2,2};
     state.dir = (vec2) { -1.0f, 0.0f };
     state.plane = (vec2) {0,0.66f};
 
@@ -231,10 +266,9 @@ int main(int argc, char* argv[]) {
     while(!state.quit){
         old_time = time;
         time = SDL_GetTicks();
-        f32 delta_time = (f32) (time - old_time) / 1000.0f;
-        printf("FPS: %f\n", 1.0f / delta_time);
+        f64 delta_time = (f64) (time - old_time) / 1000.0f;
 
-        process_events();
+        process_events(delta_time);
         memset(state.pixels, 0, sizeof(state.pixels));
         render();
 

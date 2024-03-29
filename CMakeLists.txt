@@ -4,12 +4,14 @@ project(raycaster)
 set(SDL2_INCLUDE_DIR C:/dev/SDL2-2.30.0/include)
 set(SDL2_LIB_DIR C:/dev/SDL2-2.30.0/lib/x64)
 
-include_directories(${SDL2_INCLUDE_DIR})
+include_directories(${SDL2_INCLUDE_DIR} include)
 link_directories(${SDL2_LIB_DIR})
-
 
 add_executable(${PROJECT_NAME}
         src/main.c
+        src/vec2.c
+        src/vec2i.c
+        include/config.h
 )
 
 target_link_libraries(${PROJECT_NAME} SDL2main.lib SDL2.lib)
